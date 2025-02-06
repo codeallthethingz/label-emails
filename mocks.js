@@ -35,6 +35,10 @@ class MockGmailMessage {
     isUnread() {
         return this._isUnread;
     }
+
+    markUnread() {
+        this._isUnread = true;
+    }
 }
 
 class MockLabel {
@@ -52,31 +56,9 @@ class MockLabel {
     }
 }
 
-class MockContact {
-    constructor(groups = []) {
-        this.groups = groups;
-    }
-
-    getContactGroups() {
-        return this.groups;
-    }
-}
-
-class MockContactGroup {
-    constructor(name) {
-        this.name = name;
-    }
-
-    getName() {
-        return this.name;
-    }
-}
-
 module.exports = {
     MockGmailMessage,
     MockGmailThread,
-    MockContact,
-    MockContactGroup,
     MockLabel
 };
 
@@ -87,9 +69,13 @@ global.GmailApp = {
     getUserLabelByName: jest.fn(name => new MockLabel(name)),
 };
 
-global.ContactsApp = {
-    getContactsByEmailAddress: jest.fn(() => []),
-    getContactGroups: jest.fn(() => []),
+global.People = {
+    People: {
+        searchContacts: jest.fn(),
+    },
+    ContactGroups: {
+        get: jest.fn(),
+    }
 };
 
 global.Gmail = {

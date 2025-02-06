@@ -14,8 +14,7 @@ eval(indexContent);
 const {
     MockGmailMessage,
     MockGmailThread,
-    MockContact,
-    MockContactGroup,
+    MockLabel
 } = require('./mocks');
 
 describe('tagEmails', () => {
@@ -36,20 +35,35 @@ describe('tagEmails', () => {
         );
         const mockThread = new MockGmailThread([mockMessage]);
 
-        // Setup mock contact with isithuman:human group
-        const mockContactGroup = new MockContactGroup('isithuman:human');
-        const mockContact = new MockContact([mockContactGroup]);
+        // Setup mock People API responses
+        People.People.searchContacts.mockReturnValue({
+            results: [{
+                person: {
+                    memberships: [{
+                        contactGroupMembership: {
+                            contactGroupResourceName: 'contactGroups/123'
+                        }
+                    }]
+                }
+            }]
+        });
 
-        // Setup mock responses
+        People.ContactGroups.get.mockReturnValue({
+            name: 'isithuman:human'
+        });
+
+        // Setup mock Gmail responses
         GmailApp.search.mockReturnValue([mockThread]);
-        ContactsApp.getContactsByEmailAddress.mockReturnValue([mockContact]);
 
         // Run the function
         tagEmails();
 
         // Assertions
         expect(GmailApp.search).toHaveBeenCalledWith('in:inbox -label:human', 0, 10);
-        expect(ContactsApp.getContactsByEmailAddress).toHaveBeenCalledWith(testEmail.toLowerCase());
+        expect(People.People.searchContacts).toHaveBeenCalledWith({
+            query: testEmail.toLowerCase(),
+            readMask: 'memberships'
+        });
 
         // Verify labels were applied correctly
         expect(GmailApp.createLabel).toHaveBeenCalledWith('human');
@@ -72,15 +86,20 @@ describe('tagEmails', () => {
         );
         const mockThread = new MockGmailThread([mockMessage]);
 
-        // Setup mock responses
+        // Setup mock People API responses
+        People.People.searchContacts.mockReturnValue({});
+
+        // Setup mock Gmail responses
         GmailApp.search.mockReturnValue([mockThread]);
-        ContactsApp.getContactsByEmailAddress.mockReturnValue([]);
 
         // Run the function
         tagEmails();
 
         // Assertions
-        expect(ContactsApp.getContactsByEmailAddress).toHaveBeenCalledWith(testEmail.toLowerCase());
+        expect(People.People.searchContacts).toHaveBeenCalledWith({
+            query: testEmail.toLowerCase(),
+            readMask: 'memberships'
+        });
 
         // Verify screener label was applied
         expect(GmailApp.createLabel).toHaveBeenCalledWith('screener');
@@ -89,5 +108,110 @@ describe('tagEmails', () => {
 
         // Verify thread was archived
         expect(mockThread.archived).toBeTruthy();
+    });
+
+    test('should handle multiple messages in a thread', () => {
+        const mockMessages = [
+            new MockGmailMessage('Subject 1', 'User1 <user1@example.com>'),
+            new MockGmailMessage('Subject 2', 'User2 <user2@example.com>')
+        ];
+        const mockThread = new MockGmailThread(mockMessages);
+
+        // Setup People API responses for both emails
+        People.People.searchContacts
+            .mockReturnValueOnce({
+                results: [{
+                    person: {
+                        memberships: [{
+                            contactGroupMembership: {
+                                contactGroupResourceName: 'contactGroups/123'
+                            }
+                        }]
+                    }
+                }]
+            })
+            .mockReturnValueOnce({
+                results: [{
+                    person: {
+                        memberships: [{
+                            contactGroupMembership: {
+                                contactGroupResourceName: 'contactGroups/456'
+                            }
+                        }]
+                    }
+                }]
+            });
+
+        People.ContactGroups.get
+            .mockReturnValueOnce({ name: 'isithuman:human' })
+            .mockReturnValueOnce({ name: 'isithuman:reading' });
+
+        GmailApp.search.mockReturnValue([mockThread]);
+
+        tagEmails();
+
+        expect(People.People.searchContacts).toHaveBeenCalledTimes(2);
+        expect(mockThread.labels.length).toBe(2);
+        expect(mockThread.labels.map(l => l.getName()).sort()).toEqual(['human', 'reading']);
+        expect(mockThread.archived).toBeFalsy();
+    });
+
+    test('should handle API errors gracefully', () => {
+        const mockMessage = new MockGmailMessage(
+            'Subject',
+            'User <user@example.com>'
+        );
+        const mockThread = new MockGmailThread([mockMessage]);
+
+        People.People.searchContacts.mockImplementation(() => {
+            throw new Error('API Error');
+        });
+
+        GmailApp.search.mockReturnValue([mockThread]);
+
+        tagEmails();
+
+        expect(mockThread.labels.length).toBe(1);
+        expect(mockThread.labels[0].getName()).toBe('screener');
+        expect(mockThread.archived).toBeTruthy();
+    });
+});
+
+describe('markUnread', () => {
+    test('should mark read messages as unread', () => {
+        const mockMessage = new MockGmailMessage('Subject', 'from@example.com', false);
+        const mockThread = new MockGmailThread([mockMessage]);
+        const mockLabel = new MockLabel('screener');
+        mockLabel.threads.push(mockThread);
+
+        GmailApp.getUserLabelByName.mockReturnValue(mockLabel);
+
+        markUnread('screener');
+
+        expect(mockMessage.isUnread()).toBeTruthy();
+    });
+
+    test('should handle non-existent label', () => {
+        GmailApp.getUserLabelByName.mockReturnValue(null);
+
+        markUnread('non-existent');
+
+        expect(GmailApp.getUserLabelByName).toHaveBeenCalledWith('non-existent');
+    });
+});
+
+describe('cleanGroups', () => {
+    test('should filter out system labels and handle "read" replacement', () => {
+        const input = ['inbox', 'read', 'human', 'spam', 'custom'];
+        const result = cleanGroups(input);
+        expect(result).toEqual(['human', 'custom', 'reading']);
+    });
+});
+
+describe('dedupAndSort', () => {
+    test('should deduplicate, sort, and prioritize human label', () => {
+        const input = ['b', 'a', 'human', 'b', 'c', 'human'];
+        const result = dedupAndSort(input);
+        expect(result).toEqual(['human', 'a', 'b', 'c']);
     });
 }); 

@@ -1,72 +1,104 @@
 function tagEmails() {
-  console.log('tagEmails()')
-  threads = GmailApp.search("in:inbox -label:human", 0, 10);
+  console.log('tagEmails()');
+  const threads = GmailApp.search("in:inbox -label:human", 0, 10);
+
   for (const th of threads) {
-    console.log('processing: ' + th.getMessages()[0].getSubject())
-    let applyGroups = []
+    console.log('Processing: ' + th.getMessages()[0].getSubject());
+    let applyGroups = [];
+
     for (const m of th.getMessages()) {
-      console.log('  ' + m.getFrom())
-      let from = m.getFrom().replace(/.*<([^>]+)>.*/, "$1");
-      from = from.toLowerCase()
-      let matchingContacts = ContactsApp.getContactsByEmailAddress(from);
-      if (matchingContacts.length > 0) {
-        let groups = []
-        for (const contact of matchingContacts) {
-          groups = groups.concat(contact.getContactGroups())
+      let from = m.getFrom().replace(/.*<([^>]+)>.*/, "$1").toLowerCase();
+      console.log('  From:', from);
+
+      let matchingGroups = getContactGroupsByEmail(from);
+      for (const group of matchingGroups) {
+        if (group.startsWith('isithuman:')) {
+          applyGroups.push(group.substring('isithuman:'.length));
         }
-        if (groups.length > 0) {
-          for (const group of groups) {
-            if (group.getName().startsWith('isithuman:')) {
-              applyGroups.push(group.getName().substring('isithuman:'.length));
+      }
+    }
+
+    applyGroups = cleanGroups(applyGroups);
+
+    if (applyGroups.length === 0) {
+      applyGroups.push('screener');
+      console.log("NEED TO SCREEN", th.getMessages()[0].getSubject());
+    }
+
+    console.log('  Applying labels:', applyGroups);
+
+    for (const applyGroup of applyGroups) {
+      let label = GmailApp.createLabel(applyGroup);
+      th.addLabel(label);
+    }
+
+    if (!applyGroups.includes('human')) {
+      th.moveToArchive();
+    }
+
+    if (applyGroups.includes('screened-out')) {
+      createToFilter(from);
+    }
+  }
+
+  markUnread('screener');
+}
+
+function getContactGroupsByEmail(email) {
+  try {
+    // Search contacts by email (fixed: uses correct API call)
+    const response = People.People.searchContacts({
+      query: email,
+      readMask: 'memberships'
+    });
+
+    let groupNames = [];
+    if (response.results) {
+      for (const contact of response.results) {
+        if (contact.person.memberships) {
+          for (const membership of contact.person.memberships) {
+            if (membership.contactGroupMembership) {
+              let groupResource = membership.contactGroupMembership.contactGroupResourceName;
+              let groupName = getContactGroupName(groupResource);
+              if (groupName) {
+                groupNames.push(groupName);
+              }
             }
           }
         }
       }
     }
 
-    applyGroups = cleanGroups(applyGroups)
-
-    if (applyGroups.length === 0) {
-      applyGroups.push('screener');
-      console.log("NEED TO SCREEN", th.getMessages()[0].getSubject())
-    }
-
-    console.log('  applying', applyGroups)
-
-    for (const applyGroup of applyGroups) {
-      let label = GmailApp.createLabel(applyGroup);
-      th.addLabel(label);
-    }
-    if (!applyGroups.includes('human')) {
-      th.moveToArchive();
-    }
-    if (applyGroups.includes('screened-out')) {
-      createToFilter(from);
-    }
+    return groupNames;
+  } catch (e) {
+    console.error("Error fetching contact groups:", e);
+    return [];
   }
-  markUnread('screener')
+}
+
+function getContactGroupName(resourceName) {
+  try {
+    const group = People.ContactGroups.get(resourceName);
+    return group.name || null;
+  } catch (e) {
+    console.error("Error fetching contact group name:", e);
+    return null;
+  }
 }
 
 function markUnread(labelName) {
   console.log(`Marking read messages with label "${labelName}" as unread.`);
-
-  // Get the label by name
   const label = GmailApp.getUserLabelByName(labelName);
-
   if (!label) {
     console.log(`Label "${labelName}" does not exist.`);
     return;
   }
-
-  // Get all threads with this label
   const threads = label.getThreads();
-
   if (threads.length === 0) {
-    console.log(`Unread thereads in ${labelName}: ${threads.length}`)
+    console.log(`No unread threads in ${labelName}`);
     return;
   }
 
-  // Loop through threads and mark only read messages as unread
   for (const thread of threads) {
     const messages = thread.getMessages();
     for (const message of messages) {
@@ -76,97 +108,46 @@ function markUnread(labelName) {
       }
     }
   }
-
   console.log(`Finished marking read messages with label "${labelName}" as unread.`);
 }
 
-function loadLabelsFromContacts() {
-  let allGroups = ContactsApp.getContactGroups();
-  let results = [];
-  for (const group of allGroups) {
-    if (group.getName().startsWith('isithuman:')) {
-      results.push(group);
-    }
-  }
-  return results;
-}
-
 function cleanGroups(groups) {
-  let newG = []
-  for (const g of groups) {
-    if (g === 'read') {
-      newG.push('reading')
-      continue
-    }
-    if (g === 'inbox' || g === 'sent' || g === 'starred' || g === 'snoozed' || g === 'important' || g === 'chats' || g === 'scheduled' || g === 'drafts' || g === 'all' || g === 'all mail' || g === 'spam' || g === 'trash') {
-      console.log("Cannot apply " + g + " as it is a reserved label")
-      continue
-    }
-    newG.push(g)
-  }
-  newG = dedupAndSort(newG)
-  return newG
+  let newGroups = groups.filter(g => ![
+    'inbox', 'sent', 'starred', 'snoozed', 'important',
+    'chats', 'scheduled', 'drafts', 'all', 'all mail',
+    'spam', 'trash'
+  ].includes(g));
+
+  newGroups = newGroups.map(g => g === 'read' ? 'reading' : g);
+  newGroups = dedupAndSort(newGroups);
+  return newGroups;
 }
 
 function dedupAndSort(array) {
-  if (!Array.isArray(array)) {
-    throw new Error('Input must be an array.');
+  let uniqueSortedArray = Array.from(new Set(array)).sort();
+  if (uniqueSortedArray.includes('human')) {
+    uniqueSortedArray = ['human', ...uniqueSortedArray.filter(x => x !== 'human')];
   }
-
-  // Remove duplicates and sort
-  var uniqueSortedArray = Array.from(new Set(array)).sort();
-
-  // Ensure 'human' is at the beginning if it exists
-  var humanIndex = uniqueSortedArray.indexOf('human');
-  if (humanIndex > -1) {
-    uniqueSortedArray.splice(humanIndex, 1); // Remove 'human' from its current position
-    uniqueSortedArray.unshift('human'); // Add 'human' at the start
-  }
-
   return uniqueSortedArray;
 }
 
-// Creates a filter to put all email from ${toAddress} into
-// Gmail label ${labelName}
 function createToFilter(toAddress) {
+  const filters = Gmail.Users.Settings.Filters.list('me');
+  if (filters?.filter?.some(filter => filter.criteria.to === toAddress)) return;
 
-  // Lists all the filters for the user running the script, 'me'
-  var filters = Gmail.Users.Settings.Filters.list('me')
-  if (filters !== null) {
-    for (const filter of filters.filter) {
-      if (filter.criteria.to === toAddress) {
-        // filter already exists and return.
-        return;
-      }
-    }
-  }
+  const filter = Gmail.newFilter();
+  filter.criteria = Gmail.newFilterCriteria();
+  filter.criteria.to = toAddress;
 
-  // Create a new filter object (really just POD)
-  var filter = Gmail.newFilter()
-
-
-  // Make the filter activate when the to address is ${toAddress}
-  filter.criteria = Gmail.newFilterCriteria()
-  filter.criteria.to = toAddress
-  // Make the filter remove the label id of ${"INBOX"}
-  filter.action = Gmail.newFilterAction()
+  filter.action = Gmail.newFilterAction();
   filter.action.removeLabelIds = ["INBOX"];
-  labelName = 'screened-out';
-  GmailApp.createLabel(labelName)
 
-  // Lists all the labels for the user running the script, 'me'
-  var labelList = Gmail.Users.Labels.list('me')
+  const labelName = 'screened-out';
+  GmailApp.createLabel(labelName);
 
-  // Search through the existing labels for ${labelName}
-  // this operation is still needed to get the label ID 
-  var labelId = false
-  labelList.labels.forEach(function (a) {
-    if (a.name === labelName) {
-      labelId = a.id;
-    }
-  })
+  const labelList = Gmail.Users.Labels.list('me');
+  const labelId = labelList.labels.find(a => a.name === labelName)?.id;
   filter.action.addLabelIds = [labelId];
 
-  // Add the filter to the user's ('me') settings
-  Gmail.Users.Settings.Filters.create(filter, 'me')
+  Gmail.Users.Settings.Filters.create(filter, 'me');
 }
