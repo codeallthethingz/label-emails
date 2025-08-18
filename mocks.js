@@ -12,6 +12,25 @@ class MockGmailThread {
         this.labels.push(label);
     }
 
+    removeLabel = jest.fn((label) => {
+        const index = this.labels.findIndex(l => l.getName() === label.getName());
+        if (index > -1) {
+            this.labels.splice(index, 1);
+        }
+    });
+
+    getLabels() {
+        return this.labels;
+    }
+
+    markUnread = jest.fn(() => {
+        this.messages.forEach(message => message.markUnread());
+    });
+
+    moveToInbox = jest.fn(() => {
+        this.archived = false;
+    });
+
     moveToArchive() {
         this.archived = true;
     }

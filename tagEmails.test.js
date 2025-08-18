@@ -53,7 +53,9 @@ describe('tagEmails', () => {
         });
 
         // Setup mock Gmail responses
-        GmailApp.search.mockReturnValue([mockThread]);
+        GmailApp.search
+            .mockReturnValueOnce([mockThread]) // inbox search
+            .mockReturnValueOnce([]); // screener search
 
         // Run the function
         tagEmails();
@@ -89,8 +91,10 @@ describe('tagEmails', () => {
         // Setup mock People API responses
         People.People.searchContacts.mockReturnValue({});
 
-        // Setup mock Gmail responses
-        GmailApp.search.mockReturnValue([mockThread]);
+        // Setup mock Gmail responses  
+        GmailApp.search
+            .mockReturnValueOnce([mockThread]) // inbox search
+            .mockReturnValueOnce([]); // screener search
 
         // Run the function
         tagEmails();
@@ -146,7 +150,9 @@ describe('tagEmails', () => {
             .mockReturnValueOnce({ name: 'isithuman:human' })
             .mockReturnValueOnce({ name: 'isithuman:reading' });
 
-        GmailApp.search.mockReturnValue([mockThread]);
+        GmailApp.search
+            .mockReturnValueOnce([mockThread]) // inbox search
+            .mockReturnValueOnce([]); // screener search
 
         tagEmails();
 
@@ -167,12 +173,134 @@ describe('tagEmails', () => {
             throw new Error('API Error');
         });
 
-        GmailApp.search.mockReturnValue([mockThread]);
+        GmailApp.search
+            .mockReturnValueOnce([mockThread]) // inbox search  
+            .mockReturnValueOnce([]); // screener search
 
         tagEmails();
 
         expect(mockThread.labels.length).toBe(1);
         expect(mockThread.labels[0].getName()).toBe('screener');
+        expect(mockThread.archived).toBeTruthy();
+    });
+
+    test('should process screener emails that now have contact groups', () => {
+        const testEmail = 'screener@example.com';
+        const testSubject = 'Previously Screened Email';
+
+        const mockMessage = new MockGmailMessage(
+            testSubject,
+            `Screener User <${testEmail}>`
+        );
+        const mockThread = new MockGmailThread([mockMessage]);
+
+        const screenerLabel = new MockLabel('screener');
+        mockThread.addLabel(screenerLabel);
+
+        People.People.searchContacts.mockReturnValue({
+            results: [{
+                person: {
+                    memberships: [{
+                        contactGroupMembership: {
+                            contactGroupResourceName: 'contactGroups/789'
+                        }
+                    }]
+                }
+            }]
+        });
+
+        People.ContactGroups.get.mockReturnValue({
+            name: 'isithuman:human'
+        });
+
+        GmailApp.search
+            .mockReturnValueOnce([])
+            .mockReturnValueOnce([mockThread]);
+
+        GmailApp.getUserLabelByName.mockReturnValue(screenerLabel);
+
+        tagEmails();
+
+        expect(GmailApp.search).toHaveBeenCalledWith('in:inbox -label:human', 0, 10);
+        expect(GmailApp.search).toHaveBeenCalledWith('label:screener', 0, 50);
+
+        expect(mockThread.removeLabel).toHaveBeenCalledWith(screenerLabel);
+        expect(mockThread.markUnread).toHaveBeenCalled();
+        expect(mockThread.moveToInbox).toHaveBeenCalled();
+        expect(GmailApp.createLabel).toHaveBeenCalledWith('human');
+        expect(mockThread.labels.some(l => l.getName() === 'human')).toBeTruthy();
+        expect(mockThread.archived).toBeFalsy();
+    });
+
+    test('should keep screener emails without contact groups in screener', () => {
+        const testEmail = 'stillunknown@example.com';
+        const testSubject = 'Still Unknown Email';
+
+        const mockMessage = new MockGmailMessage(
+            testSubject,
+            `Still Unknown <${testEmail}>`
+        );
+        const mockThread = new MockGmailThread([mockMessage]);
+
+        const screenerLabel = new MockLabel('screener');
+        mockThread.addLabel(screenerLabel);
+
+        People.People.searchContacts.mockReturnValue({});
+
+        GmailApp.search
+            .mockReturnValueOnce([])
+            .mockReturnValueOnce([mockThread]);
+
+        tagEmails();
+
+        expect(mockThread.removeLabel).not.toHaveBeenCalled();
+        expect(mockThread.markUnread).not.toHaveBeenCalled();
+        expect(mockThread.labels.some(l => l.getName() === 'screener')).toBeTruthy();
+        expect(mockThread.archived).toBeTruthy();
+    });
+
+    test('should process screener emails with non-human labels without moving to inbox', () => {
+        const testEmail = 'reading@example.com';
+        const testSubject = 'Reading Material Email';
+
+        const mockMessage = new MockGmailMessage(
+            testSubject,
+            `Reading User <${testEmail}>`
+        );
+        const mockThread = new MockGmailThread([mockMessage]);
+
+        const screenerLabel = new MockLabel('screener');
+        mockThread.addLabel(screenerLabel);
+
+        People.People.searchContacts.mockReturnValue({
+            results: [{
+                person: {
+                    memberships: [{
+                        contactGroupMembership: {
+                            contactGroupResourceName: 'contactGroups/888'
+                        }
+                    }]
+                }
+            }]
+        });
+
+        People.ContactGroups.get.mockReturnValue({
+            name: 'isithuman:reading'
+        });
+
+        GmailApp.search
+            .mockReturnValueOnce([])
+            .mockReturnValueOnce([mockThread]);
+
+        GmailApp.getUserLabelByName.mockReturnValue(screenerLabel);
+
+        tagEmails();
+
+        expect(mockThread.removeLabel).toHaveBeenCalledWith(screenerLabel);
+        expect(mockThread.markUnread).toHaveBeenCalled();
+        expect(mockThread.moveToInbox).not.toHaveBeenCalled();
+        expect(GmailApp.createLabel).toHaveBeenCalledWith('reading');
+        expect(mockThread.labels.some(l => l.getName() === 'reading')).toBeTruthy();
         expect(mockThread.archived).toBeTruthy();
     });
 });

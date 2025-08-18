@@ -1,8 +1,11 @@
 function tagEmails() {
   console.log('tagEmails()');
-  const threads = GmailApp.search("in:inbox -label:human", 0, 10);
+  const inboxThreads = GmailApp.search("in:inbox -label:human", 0, 10);
+  const screenerThreads = GmailApp.search("label:screener", 0, 50);
+  const allThreads = [...inboxThreads, ...screenerThreads];
 
-  for (const th of threads) {
+  for (const th of allThreads) {
+    const wasScreener = th.getLabels().some(label => label.getName() === 'screener');
     console.log('Processing: ' + th.getMessages()[0].getSubject());
     let applyGroups = [];
 
@@ -26,6 +29,20 @@ function tagEmails() {
     }
 
     console.log('  Applying labels:', applyGroups);
+
+    if (wasScreener && applyGroups.length > 0 && !applyGroups.includes('screener')) {
+      console.log('  Removing screener label and marking as unread for:', th.getMessages()[0].getSubject());
+      const screenerLabel = GmailApp.getUserLabelByName('screener');
+      if (screenerLabel) {
+        th.removeLabel(screenerLabel);
+      }
+      th.markUnread();
+
+      if (applyGroups.includes('human')) {
+        console.log('  Moving back to inbox due to human label');
+        th.moveToInbox();
+      }
+    }
 
     for (const applyGroup of applyGroups) {
       let label = GmailApp.createLabel(applyGroup);
