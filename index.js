@@ -45,7 +45,7 @@ function tagEmails() {
     }
 
     for (const applyGroup of applyGroups) {
-      let label = GmailApp.createLabel(applyGroup);
+      let label = GmailApp.getUserLabelByName(applyGroup) || GmailApp.createLabel(applyGroup);
       th.addLabel(label);
     }
 

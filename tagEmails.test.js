@@ -217,7 +217,7 @@ describe('tagEmails', () => {
             .mockReturnValueOnce([])
             .mockReturnValueOnce([mockThread]);
 
-        GmailApp.getUserLabelByName.mockReturnValue(screenerLabel);
+        GmailApp.getUserLabelByName.mockImplementation(name => name === 'screener' ? screenerLabel : null);
 
         tagEmails();
 
@@ -292,7 +292,7 @@ describe('tagEmails', () => {
             .mockReturnValueOnce([])
             .mockReturnValueOnce([mockThread]);
 
-        GmailApp.getUserLabelByName.mockReturnValue(screenerLabel);
+        GmailApp.getUserLabelByName.mockImplementation(name => name === 'screener' ? screenerLabel : null);
 
         tagEmails();
 

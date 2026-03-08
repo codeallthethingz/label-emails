@@ -85,7 +85,7 @@ module.exports = {
 global.GmailApp = {
     search: jest.fn(),
     createLabel: jest.fn(name => new MockLabel(name)),
-    getUserLabelByName: jest.fn(name => new MockLabel(name)),
+    getUserLabelByName: jest.fn(() => null),
 };
 
 global.People = {
