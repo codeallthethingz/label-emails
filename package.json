@@ -2,9 +2,6 @@
     "scripts": {
         "test": "jest --coverage"
     },
-    "jest": {
-        "coverageReporters": ["json-summary", "lcov", "text"]
-    },
     "devDependencies": {
         "jest": "^29.0.0"
     }
