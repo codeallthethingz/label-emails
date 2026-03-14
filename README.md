@@ -1,7 +1,7 @@
 # label-emails
 
 [![CI](https://github.com/codeallthethingz/label-emails/actions/workflows/node.js.yml/badge.svg)](https://github.com/codeallthethingz/label-emails/actions/workflows/node.js.yml)
-[![codecov](https://codecov.io/gh/codeallthethingz/label-emails/branch/main/graph/badge.svg)](https://codecov.io/gh/codeallthethingz/label-emails)
+[![coverage](https://codeallthethingz.github.io/label-emails/coverage/badge.svg)](https://codeallthethingz.github.io/label-emails/coverage/lcov-report/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js Version](https://img.shields.io/badge/node-22.x-green.svg)](https://nodejs.org/)
 

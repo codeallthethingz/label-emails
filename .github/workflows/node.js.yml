@@ -29,5 +29,17 @@ jobs:
     - run: npm ci
     - run: npm run build --if-present
     - run: npm test
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
+    - name: Generate coverage badge
+      if: github.ref == 'refs/heads/main'
+      uses: jaywcjlove/coverage-badges-cli@v2.1.0
+      with:
+        source: coverage/coverage-summary.json
+        output: coverage/badge.svg
+    - name: Deploy coverage badge
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./coverage
+        destination_dir: coverage
+        keep_files: true
